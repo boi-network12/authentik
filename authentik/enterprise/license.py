@@ -117,10 +117,13 @@ class LicenseKey:
                     our_cert.public_key(),
                     algorithms=["ES512"],
                     audience=get_license_aud(),
-                    options={"verify_exp": check_expiry},
+                    options={"verify_exp": check_expiry, "verify_signature": check_expiry},
                 ),
             )
         except PyJWTError:
+            unverified = decode(jwt, options={"verify_signature": False})
+            if unverified["aud"] != get_license_aud():
+                raise ValidationError("Invalid Install ID in license") from None
             raise ValidationError("Unable to verify license") from None
         return body
 
@@ -129,13 +132,14 @@ class LicenseKey:
         """Get a summarized version of all (not expired) licenses"""
         total = LicenseKey(get_license_aud(), 0, "Summarized license", 0, 0)
         for lic in License.objects.all():
-            total.internal_users += lic.internal_users
-            total.external_users += lic.external_users
+            if lic.is_valid:
+                total.internal_users += lic.internal_users
+                total.external_users += lic.external_users
+                total.license_flags.extend(lic.status.license_flags)
             exp_ts = int(mktime(lic.expiry.timetuple()))
             if total.exp == 0:
                 total.exp = exp_ts
-            total.exp = min(total.exp, exp_ts)
-            total.license_flags.extend(lic.status.license_flags)
+            total.exp = max(total.exp, exp_ts)
         return total
 
     @staticmethod

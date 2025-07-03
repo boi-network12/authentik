@@ -27,8 +27,9 @@ func (db *DirectBinder) Bind(username string, req *bind.Request) (ldap.LDAPResul
 
 	passed, err := fe.Execute()
 	flags := flags.UserFlags{
-		Session: fe.GetSession(),
-		UserPk:  flags.InvalidUserPK,
+		Session:    fe.SessionCookie(),
+		SessionJWT: fe.Session(),
+		UserPk:     flags.InvalidUserPK,
 	}
 	// only set flags if we don't have flags for this DN yet
 	// as flags are only checked during the bind, we can remember whether a certain DN
@@ -96,7 +97,7 @@ func (db *DirectBinder) Bind(username string, req *bind.Request) (ldap.LDAPResul
 		return ldap.LDAPResultOperationsError, nil
 	}
 	flags.UserPk = userInfo.User.Pk
-	flags.CanSearch = access.HasSearchPermission != nil
+	flags.CanSearch = access.GetHasSearchPermission()
 	db.si.SetFlags(req.BindDN, &flags)
 	if flags.CanSearch {
 		req.Log().Debug("Allowed access to search")

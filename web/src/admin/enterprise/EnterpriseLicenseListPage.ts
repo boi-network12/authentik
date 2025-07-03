@@ -1,7 +1,8 @@
 import "@goauthentik/admin/enterprise/EnterpriseLicenseForm";
+import "@goauthentik/admin/enterprise/EnterpriseStatusCard";
 import "@goauthentik/admin/rbac/ObjectPermissionModal";
 import { DEFAULT_CONFIG } from "@goauthentik/common/api/config";
-import { getRelativeTime } from "@goauthentik/common/utils";
+import { formatElapsedTime } from "@goauthentik/common/temporal";
 import { PFColor } from "@goauthentik/elements/Label";
 import "@goauthentik/elements/Spinner";
 import "@goauthentik/elements/buttons/SpinnerButton";
@@ -20,7 +21,6 @@ import { customElement, property, state } from "lit/decorators.js";
 import PFBanner from "@patternfly/patternfly/components/Banner/banner.css";
 import PFButton from "@patternfly/patternfly/components/Button/button.css";
 import PFCard from "@patternfly/patternfly/components/Card/card.css";
-import PFDescriptionList from "@patternfly/patternfly/components/DescriptionList/description-list.css";
 import PFFormControl from "@patternfly/patternfly/components/FormControl/form-control.css";
 import PFGrid from "@patternfly/patternfly/layouts/Grid/grid.css";
 
@@ -65,7 +65,6 @@ export class EnterpriseLicenseListPage extends TablePage<License> {
 
     static get styles(): CSSResult[] {
         return super.styles.concat(
-            PFDescriptionList,
             PFGrid,
             PFBanner,
             PFFormControl,
@@ -84,9 +83,11 @@ export class EnterpriseLicenseListPage extends TablePage<License> {
 
     async apiEndpoint(): Promise<PaginatedResponse<License>> {
         this.forecast = await new EnterpriseApi(DEFAULT_CONFIG).enterpriseLicenseForecastRetrieve();
-        this.summary = await new EnterpriseApi(DEFAULT_CONFIG).enterpriseLicenseSummaryRetrieve();
+        this.summary = await new EnterpriseApi(DEFAULT_CONFIG).enterpriseLicenseSummaryRetrieve({
+            cached: false,
+        });
         this.installID = (
-            await new EnterpriseApi(DEFAULT_CONFIG).enterpriseLicenseGetInstallIdRetrieve()
+            await new EnterpriseApi(DEFAULT_CONFIG).enterpriseLicenseInstallIdRetrieve()
         ).installId;
         return new EnterpriseApi(DEFAULT_CONFIG).enterpriseLicenseList(
             await this.defaultEndpointConfig(),
@@ -108,10 +109,8 @@ export class EnterpriseLicenseListPage extends TablePage<License> {
         return super.renderEmpty(html`
             ${inner
                 ? inner
-                : html`<ak-empty-state
-                      icon=${this.pageIcon()}
-                      header="${msg("No licenses found.")}"
-                  >
+                : html`<ak-empty-state icon=${this.pageIcon()}
+                      ><span>${msg("No licenses found.")}</span>
                       <div slot="body">
                           ${this.searchEnabled() ? this.renderEmptyClearSearch() : html``}
                       </div>
@@ -185,11 +184,17 @@ export class EnterpriseLicenseListPage extends TablePage<License> {
                     >
                         ${this.summary &&
                         this.summary?.status !== LicenseSummaryStatusEnum.Unlicensed
-                            ? html`<div>${getRelativeTime(this.summary.latestValid)}</div>
+                            ? html`<div>${formatElapsedTime(this.summary.latestValid)}</div>
                                   <small>${this.summary.latestValid.toLocaleString()}</small>`
                             : "-"}
                     </ak-aggregate-card>
                 </div>
+            </section>
+            <section class="pf-c-page__main-section pf-m-no-padding-bottom">
+                <ak-enterprise-status-card
+                    .summary=${this.summary}
+                    .forecast=${this.forecast}
+                ></ak-enterprise-status-card>
             </section>
         `;
     }
@@ -224,7 +229,7 @@ export class EnterpriseLicenseListPage extends TablePage<License> {
                     </button>
                 </ak-forms-modal>
                 <ak-rbac-object-permission-modal
-                    model=${RbacPermissionsAssignedByUsersListModelEnum.EnterpriseLicense}
+                    model=${RbacPermissionsAssignedByUsersListModelEnum.AuthentikEnterpriseLicense}
                     objectPk=${item.licenseUuid}
                 >
                 </ak-rbac-object-permission-modal> `,
@@ -247,7 +252,7 @@ export class EnterpriseLicenseListPage extends TablePage<License> {
 
         const renderCard = (installID: string) => html`
             <div class="pf-c-card__title">${msg("Your Install ID")}</div>
-            <div class="pf-c-card__body install-id">${installID}</div>
+            <div class="pf-c-card__body install-id pf-m-monospace">${installID}</div>
             <div class="pf-c-card__body">
                 <a
                     target="_blank"

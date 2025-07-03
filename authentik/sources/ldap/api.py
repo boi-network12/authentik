@@ -3,6 +3,7 @@
 from typing import Any
 
 from django.core.cache import cache
+from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema, inline_serializer
 from guardian.shortcuts import get_objects_for_user
 from rest_framework.decorators import action
@@ -14,11 +15,22 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from authentik.core.api.property_mappings import PropertyMappingFilterSet, PropertyMappingSerializer
-from authentik.core.api.sources import SourceSerializer
+from authentik.core.api.sources import (
+    GroupSourceConnectionSerializer,
+    GroupSourceConnectionViewSet,
+    SourceSerializer,
+    UserSourceConnectionSerializer,
+    UserSourceConnectionViewSet,
+)
 from authentik.core.api.used_by import UsedByMixin
 from authentik.crypto.models import CertificateKeyPair
 from authentik.lib.sync.outgoing.api import SyncStatusSerializer
-from authentik.sources.ldap.models import LDAPSource, LDAPSourcePropertyMapping
+from authentik.sources.ldap.models import (
+    GroupLDAPSourceConnection,
+    LDAPSource,
+    LDAPSourcePropertyMapping,
+    UserLDAPSourceConnection,
+)
 from authentik.sources.ldap.tasks import CACHE_KEY_STATUS, SYNC_CLASSES
 
 
@@ -39,9 +51,8 @@ class LDAPSourceSerializer(SourceSerializer):
         """Get cached source connectivity"""
         return cache.get(CACHE_KEY_STATUS + source.slug, None)
 
-    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+    def validate_sync_users_password(self, sync_users_password: bool) -> bool:
         """Check that only a single source has password_sync on"""
-        sync_users_password = attrs.get("sync_users_password", True)
         if sync_users_password:
             sources = LDAPSource.objects.filter(sync_users_password=True)
             if self.instance:
@@ -49,8 +60,28 @@ class LDAPSourceSerializer(SourceSerializer):
             if sources.exists():
                 raise ValidationError(
                     {
-                        "sync_users_password": (
+                        "sync_users_password": _(
                             "Only a single LDAP Source with password synchronization is allowed"
+                        )
+                    }
+                )
+        return sync_users_password
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        """Validate property mappings with sync_ flags"""
+        types = ["user", "group"]
+        for type in types:
+            toggle_value = attrs.get(f"sync_{type}s", False)
+            mappings_field = f"{type}_property_mappings"
+            mappings_value = attrs.get(mappings_field, [])
+            if toggle_value and len(mappings_value) == 0:
+                raise ValidationError(
+                    {
+                        mappings_field: _(
+                            (
+                                "When 'Sync {type}s' is enabled, '{type}s property "
+                                "mappings' cannot be empty."
+                            ).format(type=type)
                         )
                     }
                 )
@@ -72,6 +103,7 @@ class LDAPSourceSerializer(SourceSerializer):
             "user_object_filter",
             "group_object_filter",
             "group_membership_field",
+            "user_membership_attribute",
             "object_uniqueness_field",
             "password_login_update_internal_password",
             "sync_users",
@@ -79,6 +111,8 @@ class LDAPSourceSerializer(SourceSerializer):
             "sync_groups",
             "sync_parent_group",
             "connectivity",
+            "lookup_groups_from_user",
+            "delete_not_found_objects",
         ]
         extra_kwargs = {"bind_password": {"write_only": True}}
 
@@ -90,6 +124,7 @@ class LDAPSourceViewSet(UsedByMixin, ModelViewSet):
     serializer_class = LDAPSourceSerializer
     lookup_field = "slug"
     filterset_fields = [
+        "pbm_uuid",
         "name",
         "slug",
         "enabled",
@@ -105,6 +140,7 @@ class LDAPSourceViewSet(UsedByMixin, ModelViewSet):
         "user_object_filter",
         "group_object_filter",
         "group_membership_field",
+        "user_membership_attribute",
         "object_uniqueness_field",
         "password_login_update_internal_password",
         "sync_users",
@@ -113,6 +149,8 @@ class LDAPSourceViewSet(UsedByMixin, ModelViewSet):
         "sync_parent_group",
         "user_property_mappings",
         "group_property_mappings",
+        "lookup_groups_from_user",
+        "delete_not_found_objects",
     ]
     search_fields = ["name", "slug"]
     ordering = ["name"]
@@ -166,11 +204,12 @@ class LDAPSourceViewSet(UsedByMixin, ModelViewSet):
         for sync_class in SYNC_CLASSES:
             class_name = sync_class.name()
             all_objects.setdefault(class_name, [])
-            for obj in sync_class(source).get_objects(size_limit=10):
-                obj: dict
-                obj.pop("raw_attributes", None)
-                obj.pop("raw_dn", None)
-                all_objects[class_name].append(obj)
+            for page in sync_class(source).get_objects(size_limit=10):
+                for obj in page:
+                    obj: dict
+                    obj.pop("raw_attributes", None)
+                    obj.pop("raw_dn", None)
+                    all_objects[class_name].append(obj)
         return Response(data=all_objects)
 
 
@@ -197,3 +236,23 @@ class LDAPSourcePropertyMappingViewSet(UsedByMixin, ModelViewSet):
     filterset_class = LDAPSourcePropertyMappingFilter
     search_fields = ["name"]
     ordering = ["name"]
+
+
+class UserLDAPSourceConnectionSerializer(UserSourceConnectionSerializer):
+    class Meta(UserSourceConnectionSerializer.Meta):
+        model = UserLDAPSourceConnection
+
+
+class UserLDAPSourceConnectionViewSet(UserSourceConnectionViewSet, ModelViewSet):
+    queryset = UserLDAPSourceConnection.objects.all()
+    serializer_class = UserLDAPSourceConnectionSerializer
+
+
+class GroupLDAPSourceConnectionSerializer(GroupSourceConnectionSerializer):
+    class Meta(GroupSourceConnectionSerializer.Meta):
+        model = GroupLDAPSourceConnection
+
+
+class GroupLDAPSourceConnectionViewSet(GroupSourceConnectionViewSet, ModelViewSet):
+    queryset = GroupLDAPSourceConnection.objects.all()
+    serializer_class = GroupLDAPSourceConnectionSerializer

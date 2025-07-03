@@ -1,8 +1,10 @@
+// @file TSConfig used during tests.
 {
     "compilerOptions": {
         "baseUrl": ".",
         "types": ["node", "webdriverio/async", "@wdio/cucumber-framework", "expect-webdriverio"],
         "target": "esnext",
+        "module": "esnext",
         "forceConsistentCasingInFileNames": true,
         "experimentalDecorators": true,
         "lib": [
@@ -22,7 +24,6 @@
             "@goauthentik/admin/*": ["./src/admin/*"],
             "@goauthentik/common/*": ["./src/common/*"],
             "@goauthentik/components/*": ["./src/components/*"],
-            "@goauthentik/docs/*": ["../website/docs/*"],
             "@goauthentik/elements/*": ["./src/elements/*"],
             "@goauthentik/flow/*": ["./src/flow/*"],
             "@goauthentik/locales/*": ["./src/locales/*"],

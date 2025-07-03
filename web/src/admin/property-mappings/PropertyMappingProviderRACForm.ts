@@ -1,10 +1,10 @@
+import { BasePropertyMappingForm } from "@goauthentik/admin/property-mappings/BasePropertyMappingForm";
 import { DEFAULT_CONFIG } from "@goauthentik/common/api/config";
 import { docLink } from "@goauthentik/common/global";
 import "@goauthentik/elements/CodeMirror";
 import { CodeMirrorMode } from "@goauthentik/elements/CodeMirror";
 import "@goauthentik/elements/forms/FormGroup";
 import "@goauthentik/elements/forms/HorizontalFormElement";
-import { ModelForm } from "@goauthentik/elements/forms/ModelForm";
 import "@goauthentik/elements/forms/Radio";
 import type { RadioOption } from "@goauthentik/elements/forms/Radio";
 
@@ -33,19 +33,11 @@ export const staticSettingOptions: RadioOption<string | undefined>[] = [
 ];
 
 @customElement("ak-property-mapping-provider-rac-form")
-export class PropertyMappingProviderRACForm extends ModelForm<RACPropertyMapping, string> {
+export class PropertyMappingProviderRACForm extends BasePropertyMappingForm<RACPropertyMapping> {
     loadInstance(pk: string): Promise<RACPropertyMapping> {
         return new PropertymappingsApi(DEFAULT_CONFIG).propertymappingsProviderRacRetrieve({
             pmUuid: pk,
         });
-    }
-
-    getSuccessMessage(): string {
-        if (this.instance) {
-            return msg("Successfully updated mapping.");
-        } else {
-            return msg("Successfully created mapping.");
-        }
     }
 
     async send(data: RACPropertyMapping): Promise<RACPropertyMapping> {
@@ -54,11 +46,10 @@ export class PropertyMappingProviderRACForm extends ModelForm<RACPropertyMapping
                 pmUuid: this.instance.pk,
                 rACPropertyMappingRequest: data,
             });
-        } else {
-            return new PropertymappingsApi(DEFAULT_CONFIG).propertymappingsProviderRacCreate({
-                rACPropertyMappingRequest: data,
-            });
         }
+        return new PropertymappingsApi(DEFAULT_CONFIG).propertymappingsProviderRacCreate({
+            rACPropertyMappingRequest: data,
+        });
     }
 
     renderForm(): TemplateResult {
@@ -71,7 +62,7 @@ export class PropertyMappingProviderRACForm extends ModelForm<RACPropertyMapping
                     required
                 />
             </ak-form-element-horizontal>
-            <ak-form-group .expanded=${true}>
+            <ak-form-group expanded>
                 <span slot="header"> ${msg("General settings")} </span>
                 <div slot="body" class="pf-c-form">
                     <ak-form-element-horizontal
@@ -162,7 +153,7 @@ export class PropertyMappingProviderRACForm extends ModelForm<RACPropertyMapping
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 href="${docLink(
-                                    "/docs/providers/property-mappings/expression?utm_source=authentik",
+                                    "/docs/add-secure-apps/providers/property-mappings/expression?utm_source=authentik",
                                 )}"
                             >
                                 ${msg("See documentation for a list of all variables.")}

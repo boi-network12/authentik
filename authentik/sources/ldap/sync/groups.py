@@ -14,7 +14,12 @@ from authentik.core.models import Group
 from authentik.core.sources.mapper import SourceMapper
 from authentik.events.models import Event, EventAction
 from authentik.lib.sync.outgoing.exceptions import StopSync
-from authentik.sources.ldap.models import LDAP_UNIQUENESS, LDAPSource, flatten
+from authentik.sources.ldap.models import (
+    LDAP_UNIQUENESS,
+    GroupLDAPSourceConnection,
+    LDAPSource,
+    flatten,
+)
 from authentik.sources.ldap.sync.base import BaseLDAPSynchronizer
 
 
@@ -38,7 +43,11 @@ class GroupLDAPSynchronizer(BaseLDAPSynchronizer):
             search_base=self.base_dn_groups,
             search_filter=self._source.group_object_filter,
             search_scope=SUBTREE,
-            attributes=[ALL_ATTRIBUTES, ALL_OPERATIONAL_ATTRIBUTES],
+            attributes=[
+                ALL_ATTRIBUTES,
+                ALL_OPERATIONAL_ATTRIBUTES,
+                self._source.object_uniqueness_field,
+            ],
             **kwargs,
         )
 
@@ -49,18 +58,16 @@ class GroupLDAPSynchronizer(BaseLDAPSynchronizer):
             return -1
         group_count = 0
         for group in page_data:
-            if "attributes" not in group:
+            if (attributes := self.get_attributes(group)) is None:
                 continue
-            attributes = group.get("attributes", {})
             group_dn = flatten(flatten(group.get("entryDN", group.get("dn"))))
-            if self._source.object_uniqueness_field not in attributes:
+            if not (uniq := self.get_identifier(attributes)):
                 self.message(
-                    f"Cannot find uniqueness field in attributes: '{group_dn}'",
+                    f"Uniqueness field not found/not set in attributes: '{group_dn}'",
                     attributes=attributes.keys(),
                     dn=group_dn,
                 )
                 continue
-            uniq = flatten(attributes[self._source.object_uniqueness_field])
             try:
                 defaults = {
                     k: flatten(v)
@@ -85,6 +92,12 @@ class GroupLDAPSynchronizer(BaseLDAPSynchronizer):
                     defaults,
                 )
                 self._logger.debug("Created group with attributes", **defaults)
+                if not GroupLDAPSourceConnection.objects.filter(
+                    source=self._source, identifier=uniq
+                ):
+                    GroupLDAPSourceConnection.objects.create(
+                        source=self._source, group=ak_group, identifier=uniq
+                    )
             except SkipObjectException:
                 continue
             except PropertyMappingExpressionException as exc:
